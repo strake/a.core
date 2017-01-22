@@ -1,0 +1,144 @@
+name:                a
+version:             0.1.0.0
+-- synopsis:
+-- description:
+license:             BSD3
+license-file:        LICENSE
+author:              M Farkas-Dyck
+maintainer:          strake888@gmail.com
+copyright:           2018 M Farkas-Dyck
+-- category:            
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+executable a
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  other-modules:       Alu
+                     , Alu.Flags
+                     , Alu.Impl
+                     , Alu.Ops
+                     , Branch
+                     , Common
+                     , EmbedFile
+                     , Instruction
+                     , MCode
+                     , MCode.Lens
+                     , Prelude
+                     , Priv
+                     , Proc
+                     , Trap
+                     , Util.BitSet
+                     , Util.Ram
+                     , Util.Vec
+  build-depends:       alg
+                     , affine
+                     , base >= 4.7 && < 5
+                     , bytestring
+                     , clash-prelude
+                     , deepseq
+                     , ghc-typelits-natnormalise
+                     , ghc-typelits-knownnat
+                     , ghc-typelits-extra
+                     , lenz
+                     , lenz-template
+                     , template-haskell
+                     , util
+  default-language:    Haskell2010
+  default-extensions:  UnicodeSyntax
+                     , LambdaCase
+                     , EmptyCase
+                     , InstanceSigs
+                     , PartialTypeSignatures
+                     , TypeOperators
+                     , BinaryLiterals
+                     , NoMonomorphismRestriction
+                     , PolyKinds
+                     , DataKinds
+                     , ConstraintKinds
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , RankNTypes
+                     , TypeFamilies
+                     , MonadComprehensions
+                     , StandaloneDeriving
+                     , GeneralizedNewtypeDeriving
+                     , DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveGeneric
+  ghc-options:         -Wall -Wcompat -Wredundant-constraints -Wno-name-shadowing -Wno-orphans
+                       -Wincomplete-record-updates -Wincomplete-uni-patterns
+                       -Werror=incomplete-patterns
+                       -Werror=incomplete-uni-patterns
+                       -Werror=incomplete-record-updates
+                       -Werror=missing-fields
+                       -Werror=missing-methods
+                       -fplugin=GHC.TypeLits.Normalise
+                       -fplugin=GHC.TypeLits.KnownNat.Solver
+                       -fplugin=GHC.TypeLits.Extra.Solver
+
+library
+  hs-source-dirs:      ., src
+  exposed-modules:     
+  build-depends:       base >= 4.7 && < 5
+  --                   , base-unicode-symbols
+                     , util
+  default-language:    Haskell2010
+  default-extensions:  UnicodeSyntax
+                     , LambdaCase
+                     , EmptyCase
+                     , InstanceSigs
+                     , PartialTypeSignatures
+                     , PolyKinds
+                     , ConstraintKinds
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , MonadComprehensions
+                     , StandaloneDeriving
+                     , DeriveFunctor, DeriveFoldable, DeriveTraversable
+  ghc-options:         -Wall -Wcompat -Wredundant-constraints -Wno-name-shadowing
+                       -Wincomplete-record-updates -Wincomplete-uni-patterns
+                       -Werror=incomplete-patterns
+                       -Werror=incomplete-uni-patterns
+                       -Werror=incomplete-record-updates
+                       -Werror=missing-fields
+                       -Werror=missing-methods
+                       -fplugin=GHC.TypeLits.Normalise
+                       -fplugin=GHC.TypeLits.KnownNat.Solver
+                       -fplugin=GHC.TypeLits.Extra.Solver
+
+test-suite test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  build-depends:       base >=4.11 && <5
+                     , smallcheck >=1.1.4
+                     , tasty >=1.0
+                     , tasty-smallcheck >=0.8
+                     , a
+  default-language:    Haskell2010
+  default-extensions:  UnicodeSyntax
+                     , LambdaCase
+                     , EmptyCase
+                     , InstanceSigs
+                     , PartialTypeSignatures
+                     , PolyKinds
+                     , ConstraintKinds
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , MonadComprehensions
+                     , StandaloneDeriving
+                     , DeriveFunctor, DeriveFoldable, DeriveTraversable
+  ghc-options:         -Wall -Wcompat -Wredundant-constraints -Wno-name-shadowing
+                       -Wincomplete-record-updates -Wincomplete-uni-patterns
+                       -Werror=incomplete-patterns
+                       -Werror=incomplete-uni-patterns
+                       -Werror=incomplete-record-updates
+                       -Werror=missing-fields
+                       -Werror=missing-methods
+                       -fplugin=GHC.TypeLits.Normalise
+                       -fplugin=GHC.TypeLits.KnownNat.Solver
+                       -fplugin=GHC.TypeLits.Extra.Solver
+
+source-repository head
+  type:     git
+  location: https://github.com/strake/a.core

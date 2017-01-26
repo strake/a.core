@@ -1,3 +1,4 @@
+{-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -7,10 +8,12 @@ module Main where
 
 import CLaSH.Prelude.Safe hiding (Word, toList)
 import CLaSH.Prelude.Explicit.Safe
+import Control.Arrow
 import Data.Foldable (toList)
 
 import Common
 import Instruction
+import Util.Vec
 
 import qualified Examples
 
@@ -22,33 +25,45 @@ regFile' clk n (unbundle -> srSignals) wbSignal =
               flip (asyncRam' clk clk n) wbMaySignal) <$> srSignals
   where wbMaySignal = (\ case (0, _) -> Nothing; (n, x) -> Just (n, x);) <$> wbSignal
 
-proc' :: (KnownNat logW, 5 <= logW, 12 <= 2^logW, 32 <= 2^logW) =>
-         SClock clk -> (CodePtr logW -> Instruction) ->
-         Signal' clk (CodePtr logW, (RegNum, Word logW), Vec 2 RegNum)
-proc' clk fetch = o
-  where o@(unbundle -> (_, wb, sr)) =
-            mealy' clk (\ pc xs ->
-                        let i = fetch pc
-                            (pc', wb) = case instruct i of
-                                Nothing -> error "Illegal instruction"
-                                Just op -> op (xs !! (0 :: Int)) (xs !! (1 :: Int)) pc
-                        in (pc', (pc, wb, srcRegNums i))) 0 $
-            regFile' clk (SNat :: SNat 32) sr wb
+proc' :: ∀ clk logW n .
+         (KnownNat n, KnownNat logW, logW <= 2^logW, 3 <= logW, 5 <= logW, 12 <= 2^logW, 32 <= 2^logW) =>
+         SClock clk -> Vec n (Word logW) ->
+         Signal' clk (CodePtr logW, Instruction, (RegNum, Word logW), Vec 2 RegNum)
+proc' clk boot = bundle (pc, i, wb, srcRegNums <$> i)
+  where pc :: Signal' clk (CodePtr logW)
+        pc = register' clk resetVector pc'
+
+        resetVector :: CodePtr logW
+        resetVector = 0
+
+        i :: Signal' clk Instruction
+        i = -- Block RAM's first output is undefined, so jump to same location
+            register' clk (pure jumpHere) (pure id) <*>
+            (liftA2 (\ w -> v2bv . (!! w) . reverse . unconcatI . bv2v) (snd . f <$> pc) $
+             (resize :: Word logW -> BitVector (2^(logW-5)*32)) <$>
+             blockRam' clk boot (fst . f <$> pc') memWrMay)
+          where f :: CodePtr logW -> (BitVector (2^logW - (logW - 3)), BitVector (logW - 5))
+                f = unCodePtr >>> split >>>
+                    id *** (split >>> \ case (w, 0 :: BitVector 2) -> w
+                                             _ -> error "Misaligned instruction fetch")
+
+                jumpHere :: Instruction
+                jumpHere = 0x0000006F
+
+        xs :: Signal' clk (Vec 2 (Word logW))
+        xs = regFile' clk (SNat :: SNat 32) (srcRegNums <$> i) wb
+
+        (pc', wb) =
+            unbundle $
+            (\ case Nothing -> error "Illegal instruction"
+                    Just op -> \ (x:>y:>_) -> op x y) . instruct <$> i <*> xs <*> pc
+
+        memWrMay = pure Nothing
 
 type LogWordSize = 6
 
 main :: IO ()
-main = mapM_ (\ (pc@(CodePtr z), (n, x), sr) -> do
-                  _ <- getLine
-                  print pc
-                  print ((testProgram . fst .
-                           (split :: Word LogWordSize -> (_, BitVector 2))) z)
-                  print (n, x)
-                  print sr) . toList $ topEntity
+main = mapM_ (\ x -> getLine *> printX x) . toList $ topEntity
 
-topEntity :: Signal (CodePtr LogWordSize, (RegNum, Word LogWordSize), Vec 2 RegNum)
-topEntity = proc' systemClock $
-            testProgram . fst . (split :: Word LogWordSize -> (_, BitVector 2)) . unCodePtr
-
-testProgram :: Enum addr => addr -> Instruction
-testProgram = asyncRom Examples.counter
+topEntity :: Signal (CodePtr LogWordSize, Instruction, (RegNum, Word LogWordSize), Vec 2 RegNum)
+topEntity = proc' systemClock (chunksLilEndianI Examples.counter)

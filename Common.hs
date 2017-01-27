@@ -6,6 +6,8 @@ import CLaSH.Prelude.Safe hiding (Word)
 
 type Word logW = BitVector (2^logW)
 
+type WordPtr logW = BitVector (2^logW - (logW - 3))
+
 newtype RegNum = RegNum (BitVector 5) deriving (Eq, Num, Enum, Show, ShowX)
 
 newtype CodePtr logW = CodePtr { unCodePtr :: BitVector (2^logW) }

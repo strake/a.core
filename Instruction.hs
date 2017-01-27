@@ -2,12 +2,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 
-module Instruction (Instruction, instruct, srcRegNums) where
+module Instruction (Instruction, MemOp (..), instruct, srcRegNums) where
 
 import Data.Bool (bool)
 import Data.Function (on)
 import CLaSH.Prelude.Safe hiding (Word)
+import GHC.Generics
 
 import Common
 
@@ -20,19 +22,22 @@ instruct ::
     ∀ logW .
     (KnownNat logW, 5 <= logW, 12 <= 2^logW, 32 <= 2^logW) =>
     Instruction ->
-    Maybe (Word logW -> Word logW -> CodePtr logW -> (CodePtr logW, (RegNum, Word logW)))
+    Maybe (Word logW -> Word logW -> CodePtr logW ->
+           (CodePtr logW, (Either RegNum (MemOp logW), Word logW)))
 instruct i = case opcode of
     RegImm -> (\ alu -> regOpOnly $ pure . flip alu immI) <$> aluMay
     RegReg -> regOpOnly <$> aluMay
     RegReg32 -> regOpOnly . (`on` truncAndSExt (SNat :: SNat 5)) <$>
                 bool Nothing aluMay (snatToInteger (SNat :: SNat logW) > 5)
     LUI -> Just (regOpOnly $ \ _ _ -> immU)
-    AUIPC -> Just (\ _ _ pc@(CodePtr z) -> (pc + 4, (rd, z + immU)))
-    JAL -> Just (\ _ _ (CodePtr z) -> (CodePtr (z + immUJ), (rd, z + 4)))
+    AUIPC -> Just (\ _ _ pc@(CodePtr z) -> (pc + 4, (Left rd, z + immU)))
+    JAL -> Just (\ _ _ (CodePtr z) -> (CodePtr (z + immUJ), (Left rd, z + 4)))
     JALR | 0 <- rs2 -> Just (\ x _ (CodePtr z) ->
-                             (CodePtr (clearBit (x + immI) 0), (rd, z + 4)))
+                             (CodePtr (clearBit (x + immI) 0), (Left rd, z + 4)))
     BRANCH -> (\ op x y (CodePtr z) ->
-               (CodePtr (z + bool 4 immSB (x `op` y)), (0, undefined))) <$> cmpOpMay
+               (CodePtr (z + bool 4 immSB (x `op` y)), (Left 0, undefined))) <$> cmpOpMay
+    LOAD | 3 <- funct3 -> Just (\ x _ pc -> (pc + 4, (Right (Load rd), x + immI)))
+    STOR | 3 <- funct3 -> Just (\ x y pc -> (pc + 4, (Right (Store y), x + immS)))
     _ -> Nothing
   where opcode = slice d6 d0 i
         funct3 = slice d14 d12 i
@@ -54,8 +59,9 @@ instruct i = case opcode of
 
         regOpOnly ::
             (Word logW -> Word logW -> Word logW) ->
-            Word logW -> Word logW -> CodePtr logW -> (CodePtr logW, (RegNum, Word logW))
-        regOpOnly f x y cp = (cp + 4, (rd, f x y))
+            Word logW -> Word logW -> CodePtr logW ->
+            (CodePtr logW, (Either RegNum a, Word logW))
+        regOpOnly f x y cp = (cp + 4, (Left rd, f x y))
 
         cmpOpMay :: Maybe (BitVector n -> BitVector n -> Bool)
         cmpOpMay = case funct3 of
@@ -90,6 +96,8 @@ instruct i = case opcode of
 
         shamt :: KnownNat n => BitVector n -> Int
         shamt y = fromIntegral (y .&. (snatToNum . snatProxy) y - 1)
+
+data MemOp logW = Load RegNum | Store (Word logW) deriving (ShowX, Generic)
 
 pattern RegImm = 0x13
 pattern RegReg = 0x33

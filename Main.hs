@@ -9,7 +9,9 @@ module Main where
 import CLaSH.Prelude.Safe hiding (Word, toList)
 import CLaSH.Prelude.Explicit.Safe
 import Control.Arrow
+import Data.Bool (bool)
 import Data.Foldable (toList)
+import Data.Maybe (fromMaybe)
 
 import Common
 import Instruction
@@ -17,19 +19,18 @@ import Util.Vec
 
 import qualified Examples
 
-regFile' :: (KnownNat m, Eq addr, Num addr, Enum addr, Num a) =>
+regFile' :: (KnownNat m, Enum addr) =>
             SClock clk -> SNat n -> Signal' clk (Vec m addr) ->
             Signal' clk (addr, a) -> Signal' clk (Vec m a)
 regFile' clk n (unbundle -> srSignals) wbSignal =
-    bundle $ (liftA2 (\ case 0 -> pure 0; _ -> id;) <*>
-              flip (asyncRam' clk clk n) wbMaySignal) <$> srSignals
-  where wbMaySignal = (\ case (0, _) -> Nothing; (n, x) -> Just (n, x);) <$> wbSignal
+    bundle $ flip (asyncRam' clk clk n) (Just <$> wbSignal) <$> srSignals
 
 proc' :: ∀ clk logW n .
          (KnownNat n, KnownNat logW, logW <= 2^logW, 3 <= logW, 5 <= logW, 12 <= 2^logW, 32 <= 2^logW) =>
          SClock clk -> Vec n (Word logW) ->
-         Signal' clk (CodePtr logW, Instruction, (RegNum, Word logW), Vec 2 RegNum)
-proc' clk boot = bundle (pc, i, wb, srcRegNums <$> i)
+         Signal' clk (CodePtr logW, Instruction, (RegNum, Word logW), Vec 2 RegNum,
+                      Either RegNum (MemOp logW))
+proc' clk boot = bundle (pc, i, wb, srcRegNums <$> i, rdOrMemOp)
   where pc :: Signal' clk (CodePtr logW)
         pc = register' clk resetVector pc'
 
@@ -42,7 +43,7 @@ proc' clk boot = bundle (pc, i, wb, srcRegNums <$> i)
             (liftA2 (\ w -> v2bv . (!! w) . reverse . unconcatI . bv2v) (snd . f <$> pc) $
              (resize :: Word logW -> BitVector (2^(logW-5)*32)) <$>
              blockRam' clk boot (fst . f <$> pc') memWrMay)
-          where f :: CodePtr logW -> (BitVector (2^logW - (logW - 3)), BitVector (logW - 5))
+          where f :: CodePtr logW -> (WordPtr logW, BitVector (logW - 5))
                 f = unCodePtr >>> split >>>
                     id *** (split >>> \ case (w, 0 :: BitVector 2) -> w
                                              _ -> error "Misaligned instruction fetch")
@@ -51,19 +52,38 @@ proc' clk boot = bundle (pc, i, wb, srcRegNums <$> i)
                 jumpHere = 0x0000006F
 
         xs :: Signal' clk (Vec 2 (Word logW))
-        xs = regFile' clk (SNat :: SNat 32) (srcRegNums <$> i) wb
+        xs = (liftA2 . liftA2 . liftA2 . liftA2)
+             fromMaybe (regFile' clk (SNat :: SNat 32)) bypass (srcRegNums <$> i) wb
+          where bypass = liftA2 . traverse . flip $ \ (rd, z) -> \ case
+                             0 -> Just 0
+                             rs -> bool Nothing (Just z) (rd == rs)
 
-        (pc', wb) =
-            unbundle $
+        z :: Signal' clk (Word logW)
+        (pc', (rdOrMemOp, z)) =
+            unbundle >>> id *** unbundle $
             (\ case Nothing -> error "Illegal instruction"
                     Just op -> \ (x:>y:>_) -> op x y) . instruct <$> i <*> xs <*> pc
 
-        memWrMay = pure Nothing
+        memRd = blockRam' clk boot zW memWrMay
+
+        (memWrMay, wb') =
+            unbundle $
+            liftA3 (\ z zW -> \ case
+                        Left rd -> (Nothing, (rd, Just z))
+                        Right (Load rd) -> (Nothing, (rd, Nothing))
+                        Right (Store x) -> (Just (zW, x), (0, Just undefined))) z zW rdOrMemOp
+
+        zW :: Signal' clk (WordPtr logW)
+        zW = (\ case (zW, 0) -> zW; _ -> error "Misaligned memory use";) . split <$> z
+
+        wb :: Signal' clk (RegNum, Word logW)
+        wb = (\ x -> id *** fromMaybe x) <$> memRd <*> register' clk (0, Just undefined) wb'
 
 type LogWordSize = 6
 
 main :: IO ()
 main = mapM_ (\ x -> getLine *> printX x) . toList $ topEntity
 
-topEntity :: Signal (CodePtr LogWordSize, Instruction, (RegNum, Word LogWordSize), Vec 2 RegNum)
+topEntity :: Signal (CodePtr LogWordSize, Instruction, (RegNum, Word LogWordSize), Vec 2 RegNum,
+                     Either RegNum (MemOp LogWordSize))
 topEntity = proc' systemClock (chunksLilEndianI Examples.counter)

@@ -4,7 +4,7 @@
 module Main where
 
 import qualified Data.List as List
-import Util.Vec
+import Util.BlockRam
 
 import Common
 import Instruction
@@ -15,25 +15,17 @@ import EmbedFile
 type LogWordSize = 6
 
 main :: IO ()
-main = mapM_ (\ (pc@(CodePtr z), (n, x)) -> do
+main = mapM_ (\ (pc, i, wb) -> do
                   _ <- getLine
-                  let i = asyncRom testProgram . fst .
-                          (split :: Word LogWordSize -> (_, BitVector 2)) $ z
                   putStrLn $ "PC: " List.++ showX pc
                   putStrLn $ "Instruction: " List.++ showX i
                   putStrLn $ "MCode: " List.++ showX (instruct @LogWordSize i)
-                  putStrLn $ "Writeback: " List.++ showX (n, x)) . toList $ topEntity
+                  putStrLn $ "Writeback: " List.++ showX wb) . toList $ topEntity
 
-topEntity :: Signal System (CodePtr LogWordSize, (RegNum, Word LogWordSize))
+topEntity :: Signal System (CodePtr LogWordSize, Instruction, (RegNum, Word LogWordSize))
 topEntity = go systemClockGen systemResetGen
   where
-    go clk rst =
-        proc clk rst $
-        programRom clk rst testProgram .
-        fmap (fst . (split :: Word LogWordSize -> (_, BitVector 2)) . unCodePtr)
+    go clk rst = proc clk rst $ blockRam' clk rst (unconcatI (testProgram ++ pure 0) :: Vec (2^14) _)
 
-programRom :: _ => Clock dom gated -> Reset dom sync -> Vec n Instruction -> Signal dom addr -> Signal dom Instruction
-programRom clk rst is pc = register clk rst (pure jumpHere) (pure id) <*> rom clk is pc
-
-testProgram :: Vec _ Instruction
-testProgram = chunksLilEndianI $(embedFile "examples/counter")
+testProgram :: Vec _ (BitVector 8)
+testProgram = $(embedFile "examples/counter")

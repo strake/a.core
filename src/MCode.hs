@@ -16,5 +16,5 @@ data MCodon logW = MCodon
       jwb :: JWb logW }
   deriving (Eq, Show, ShowX, Undefined, Generic)
 
-data JWb logW = WbAlu | WbPc (Word logW) | JumpIf (Word logW) Branch.Cmp | JumpAlu
+data JWb logW = WbAlu | WbPc (Word logW) | JumpIf (Word logW) Branch.Cmp | JumpAlu | Load
   deriving (Eq, Show, ShowX, NFData, Undefined, Generic)

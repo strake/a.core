@@ -1,3 +1,7 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Common where
@@ -7,6 +11,8 @@ import qualified Data.List as List
 import Data.Monoid (Sum (..))
 import Numeric (showHex)
 
+import Util.Vec
+
 type Word logW = BitVector (2^logW)
 
 newtype RegNum = RegNum (Unsigned 5) deriving (Eq, Num, Enum, NFData, Undefined)
@@ -14,18 +20,27 @@ instance BitPack RegNum where type BitSize RegNum = 5; pack (RegNum n) = pack n;
 instance Show RegNum where show (RegNum n) = List.reverse . List.take 2 $ List.reverse (show n) List.++ List.repeat '0'
 instance ShowX RegNum where showsPrecX n = maybe ('X':) (showsPrec n) . maybeX
 
-newtype CodePtr logW = CodePtr { unCodePtr :: BitVector (2^logW) }
+newtype Ptr logW = Ptr { unPtr :: BitVector (2^logW) }
   deriving (Eq, Enum, NFData, Undefined)
-instance KnownNat logW => Show (CodePtr logW) where showsPrec _ = showHex . unCodePtr
-instance KnownNat logW => ShowX (CodePtr logW) where showsPrecX n = maybe ('X':) (showsPrec n) . maybeX
+instance KnownNat logW => Show (Ptr logW) where showsPrec _ = showHex . unPtr
+instance KnownNat logW => ShowX (Ptr logW) where showsPrecX n = maybe ('X':) (showsPrec n) . maybeX
 
 instance KnownNat n => Group (Sum (BitVector n)) where
     invert = negate
 
-instance KnownNat logW => Affine (CodePtr logW) where
-    type Diff (CodePtr logW) = Sum (Word logW)
-    CodePtr a `diff` CodePtr b = Sum (a - b)
-    Sum δ `offset` CodePtr a = CodePtr (a + δ)
+instance KnownNat logW => Affine (Ptr logW) where
+    type Diff (Ptr logW) = Sum (Word logW)
+    Ptr a `diff` Ptr b = Sum (a - b)
+    Sum δ `offset` Ptr a = Ptr (a + δ)
+
+type CodePtr = Ptr
+pattern CodePtr :: Word logW -> CodePtr logW
+pattern CodePtr {unCodePtr} = Ptr unCodePtr
+{-# COMPLETE CodePtr #-}
 
 signed :: KnownNat n => BitVector n -> Signed n
 signed = unpack
+
+sliceWordBytes :: ∀ logW logB logA . _ => Ptr logW -> Vec (2^(logW-logB)) (Word logB) -> Word logA
+sliceWordBytes (Ptr ptr) bs = chunksLilEndianI @(2^logB) @(2^(logA-logB)) bs !! k
+  where (_, k, _) = unpack ptr :: (BitVector _, BitVector (logW-logA), BitVector (logA-logB))

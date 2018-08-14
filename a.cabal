@@ -30,6 +30,7 @@ executable a
                      , Proc
                      , Trap
                      , Util.BitSet
+                     , Util.BlockRam
                      , Util.Ram
                      , Util.Vec
   build-depends:       alg

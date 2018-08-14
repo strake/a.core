@@ -27,6 +27,7 @@ instruct i = guard (0b11 == quad) *> case major of
     JALR | 0 <- rs2 -> Just def { aluOp = ADD, aluFlags = 0, imm = Just immI, jwb = JumpAlu }
     BRANCH -> Just def { aluOp = ADD, aluFlags = Alu.NegateY, rd = 0,
                          jwb = JumpIf immB (B.Cmp minor) }
+    LOAD -> Just def { aluOp = ADD, aluFlags = 0, imm = Just immI, jwb = Load }
     _ -> Nothing
   where (_ :: BitVector 7, rs2 :: RegNum, rs1 :: RegNum, minor :: BitVector 3,
          rd :: RegNum, major :: BitVector 5, quad :: BitVector 2) = unpack i

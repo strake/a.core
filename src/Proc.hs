@@ -21,17 +21,21 @@ import Util.Ram
 proc :: ∀ clk gated sync logW .
         _ =>
         Clock clk gated -> Reset clk sync ->
-        (Signal clk (CodePtr logW) -> Signal clk Instruction) ->
-        Signal clk (CodePtr logW, (RegNum, Word logW))
-proc clk rst fetch = bundle (pc, wb)
+        (Signal clk (BitVector (2^logW-logW+3)) ->
+         Signal clk (BitVector (2^logW-logW+3), Vec (2^(logW-3)) (Maybe (BitVector 8))) ->
+         Signal clk (Vec (2^(logW-3)) (BitVector 8))) ->
+        Signal clk (Ptr logW, Instruction, (RegNum, Word logW))
+proc clk rst memory = bundle (delay clk readAddr, i, wb)
   where
-    (pc, wb) = mealyB clk rst ctrl' startState (i, xs')
-    i = fetch pc
+    (readAddr, wb) = mealyB clk rst ctrl' startState (i, xs', pack <$> readBytes)
+    readBytes = memory (fst . split . unPtr <$> readAddr) (pure (0, pure Nothing))
+    i = register clk rst (pure jumpHere) (sliceWordBytes <$> readAddr) <*> readBytes
     rs2 = unpack . slice d24 d20 <$> i
     rs1 = unpack . slice d19 d15 <$> i
     xs' = bundle $ flip (asyncRam0 clk clk 0) ((unpack . pack *** id) <$> wb) <$> rs1:>rs2:>Nil
 
-    ctrl' state@(State {..}) (i, xs')
+    ctrl' state@(State {..}) (i, xs', v)
+      | Just rd <- injRd = (state {pc = pc .+ 4, injRd = Nothing}, (pc .+ 4, (rd, v)))
       | Just mc <- instruct i = ctrl state (mc, xs')
       | otherwise =
         (state { pc = mtvec
@@ -40,7 +44,8 @@ proc clk rst fetch = bundle (pc, wb)
                , mtval = resize i
                }, (mtvec, (0, errorX "")))
 
-    ctrl state@(State {pc}) (MCodon {..}, x:>y':>_) = (state {pc = pc'}, (pc', (rd, wbv)))
+    ctrl state@(State {pc}) (MCodon {..}, x:>y':>_) =
+        (state {pc = pc', injRd = injRd'}, (readAddr, (rd, wbv)))
       where
         y = fromMaybe y' imm
         (carry, z) = alu aluFlags aluOp x y
@@ -57,13 +62,19 @@ proc clk rst fetch = bundle (pc, wb)
                     f _ {- LTU, GEU -} = carry
                 in (pc .+ bool 4 (Sum target) w, unCodePtr (pc .+ 4))
             JumpAlu -> (CodePtr (z .&. complement 1), unCodePtr (pc .+ 4))
+            Load -> (pc, errorX "")
+        (readAddr, injRd') = case jwb of
+            Load -> (Ptr z, Just rd)
+            _ -> (pc', Nothing)
 
-    startState = State
-      { pc = CodePtr 0, mcause = 0
-      , mtvec = errorX "", mscratch = errorX "", mepc = errorX "", mtval = errorX "" }
+startState :: KnownNat logW => State logW
+startState = State
+  { pc = CodePtr 0, mcause = 0, injRd = Nothing
+  , mtvec = CodePtr 0x1000, mscratch = errorX "", mepc = errorX "", mtval = errorX "" }
 
 data State logW = State
   { pc :: CodePtr logW
+  , injRd :: Maybe (RegNum)
   , mepc     :: CodePtr logW
   , mtvec    :: CodePtr logW
   , mscratch :: Word logW

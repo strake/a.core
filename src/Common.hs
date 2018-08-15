@@ -22,6 +22,7 @@ instance ShowX RegNum where showsPrecX n = maybe ('X':) (showsPrec n) . maybeX
 
 newtype Ptr logW = Ptr { unPtr :: BitVector (2^logW) }
   deriving (Eq, Enum, NFData, Undefined)
+instance BitPack (Ptr logW) where type BitSize (Ptr logW) = 2^logW; pack (Ptr ptr) = ptr; unpack = Ptr
 instance KnownNat logW => Show (Ptr logW) where showsPrec _ = showHex . unPtr
 instance KnownNat logW => ShowX (Ptr logW) where showsPrecX n = maybe ('X':) (showsPrec n) . maybeX
 

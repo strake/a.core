@@ -9,7 +9,6 @@ module Proc where
 
 import Algebra.Affine
 import Control.Arrow
-import Data.Monoid (Sum (..))
 
 import Alu
 import Common
@@ -44,23 +43,27 @@ proc clk rst memory = bundle (delay clk readAddr, i, wb)
                , mtval = resize i
                }, (mtvec, (errorX "", pure Nothing), (0, errorX "")))
 
-    ctrl state@(State {pc}) (MCodon {..}, x:>y':>_) =
+    ctrl state@(State {pc}) (MCodon {..}, x':>y':>_) =
         (state {pc = pc', injRd = injRd'}, (readAddr, ((fst . split) z, wx), (rd, wbv)))
       where
+        x = case jwb of
+            JumpIf _ -> unPtr pc
+            WbPc     -> unPtr pc
+            _        -> x'
         y = fromMaybe y' imm
         (carry, z) = alu aluFlags aluOp x y
         wbv :: Word logW
         (pc', wbv) = case jwb of
             WbAlu -> (pc .+ 4, z)
-            WbPc target -> (pc .+ 4, unCodePtr pc + target)
-            JumpIf target pred ->
+            WbPc  -> (pc .+ 4, z)
+            JumpIf pred ->
                 let w = split >>> f *** unpack >>> uncurry (==) $ pred
                     f :: BitVector 2 -> Bit
                     f 0 {- EQ,  NE  -} = reduceOr z
                     f 1 {- ⊤,   ⊥   -} = 0
                     f 2 {- LT,  GE  -} = carry `xor` msb (x `xor` y)
                     f _ {- LTU, GEU -} = carry
-                in (pc .+ bool 4 (Sum target) w, unCodePtr (pc .+ 4))
+                in (bool (pc .+ 4) (Ptr z) w, unCodePtr (pc .+ 4))
             JumpAlu -> (CodePtr (z .&. complement 1), unCodePtr (pc .+ 4))
             Load -> (pc, errorX "")
             Stor -> (pc .+ 4, errorX "")

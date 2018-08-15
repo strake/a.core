@@ -13,8 +13,8 @@ data MCodon logW = MCodon
       rs1 :: RegNum,
       rs2 :: RegNum,
       imm :: Maybe (Word logW),
-      jwb :: JWb logW }
-  deriving (Eq, Show, ShowX, Undefined, Generic)
+      jwb :: JWb }
+  deriving (Eq, Show, ShowX, NFData, Undefined, Generic)
 
-data JWb logW = WbAlu | WbPc (Word logW) | JumpIf (Word logW) Branch.Cmp | JumpAlu | Load | Stor
+data JWb = WbAlu | WbPc | JumpIf Branch.Cmp | JumpAlu | Load | Stor
   deriving (Eq, Show, ShowX, NFData, Undefined, Generic)

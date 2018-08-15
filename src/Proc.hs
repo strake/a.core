@@ -27,25 +27,25 @@ proc :: ∀ clk gated sync logW .
         Signal clk (Ptr logW, Instruction, (RegNum, Word logW))
 proc clk rst memory = bundle (delay clk readAddr, i, wb)
   where
-    (readAddr, wb) = mealyB clk rst ctrl' startState (i, xs', pack <$> readBytes)
-    readBytes = memory (fst . split . unPtr <$> readAddr) (pure (0, pure Nothing))
+    (readAddr, wx, wb) = mealyB clk rst ctrl' startState (i, xs', pack <$> readBytes)
+    readBytes = memory (fst . split . unPtr <$> readAddr) wx
     i = register clk rst (pure jumpHere) (sliceWordBytes <$> readAddr) <*> readBytes
     rs2 = unpack . slice d24 d20 <$> i
     rs1 = unpack . slice d19 d15 <$> i
     xs' = bundle $ flip (asyncRam0 clk clk 0) ((unpack . pack *** id) <$> wb) <$> rs1:>rs2:>Nil
 
     ctrl' state@(State {..}) (i, xs', v)
-      | Just rd <- injRd = (state {pc = pc .+ 4, injRd = Nothing}, (pc .+ 4, (rd, v)))
+      | Just rd <- injRd = (state {pc = pc .+ 4, injRd = Nothing}, (pc .+ 4, (errorX "", pure Nothing), (rd, v)))
       | Just mc <- instruct i = ctrl state (mc, xs')
       | otherwise =
         (state { pc = mtvec
                , mepc = pc
                , mcause = Trap.IllegalInstruction
                , mtval = resize i
-               }, (mtvec, (0, errorX "")))
+               }, (mtvec, (errorX "", pure Nothing), (0, errorX "")))
 
     ctrl state@(State {pc}) (MCodon {..}, x:>y':>_) =
-        (state {pc = pc', injRd = injRd'}, (readAddr, (rd, wbv)))
+        (state {pc = pc', injRd = injRd'}, (readAddr, ((fst . split) z, wx), (rd, wbv)))
       where
         y = fromMaybe y' imm
         (carry, z) = alu aluFlags aluOp x y
@@ -63,9 +63,13 @@ proc clk rst memory = bundle (delay clk readAddr, i, wb)
                 in (pc .+ bool 4 (Sum target) w, unCodePtr (pc .+ 4))
             JumpAlu -> (CodePtr (z .&. complement 1), unCodePtr (pc .+ 4))
             Load -> (pc, errorX "")
+            Stor -> (pc .+ 4, errorX "")
         (readAddr, injRd') = case jwb of
             Load -> (Ptr z, Just rd)
             _ -> (pc', Nothing)
+        wx = case jwb of
+            Stor -> Just <$> (unpack y' :: Vec (2^(logW-3)) (BitVector 8))
+            _ -> pure Nothing
 
 startState :: KnownNat logW => State logW
 startState = State

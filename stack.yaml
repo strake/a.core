@@ -1,0 +1,10 @@
+resolver: lts-12.6
+
+packages:
+- .
+
+extra-deps:
+- affine-0.1.1.0
+- lenz-template-0.2.0.0
+- git: https://github.com/strake/clash-prelude.hs
+  commit: d568ffed8d644037b88cf03d063265a730b86ddd
